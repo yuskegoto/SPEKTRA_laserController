@@ -106,17 +106,18 @@ fn main() -> Result<()> {
     emac_pwr.set_high()?;
 
     /////////////////////////////// Dynamixel TTL Comm Config //////////////////////////////////////////////
-    let mut dxl_sel = PinDriver::output(peripherals.pins.gpio14)?;
+    let mut dxl_sel = PinDriver::output(peripherals.pins.gpio32)?;
+    // let mut dxl_sel = PinDriver::output(peripherals.pins.gpio14)?;
     let dxl_driver = {
         // Working gpio32
         // GPIO35: Unable to use for output
         // gpio36 sensor_v
         // gpio39 sensor_vn
-        // let dxl_tx = peripherals.pins.gpio33;
+        let tx = peripherals.pins.gpio33;
         // let tx = peripherals.pins.gpio32;
-        // let rx = peripherals.pins.gpio35;
-        let tx = peripherals.pins.gpio15;
-        let rx = peripherals.pins.gpio13;
+        let rx = peripherals.pins.gpio35;
+        // let tx = peripherals.pins.gpio15;
+        // let rx = peripherals.pins.gpio13;
         let config = uart_config::Config::new()
             .baudrate(Hertz(DXL_BAUDRATE))
             .data_bits(uart_config::DataBits::DataBits8)

@@ -75,8 +75,13 @@ where
     }
 
     pub fn init(&mut self) -> Result<()> {
-        // self.ping(1u8)?;
+        self.ping(1u8)?;
+        self.ping(2u8)?;
         self.read_angle(1u8)?;
+        self.set_led(1u8, true)?;
+        self.set_led(2u8, true)?;
+        self.enable_torque(1u8, true)?;
+        self.enable_torque(2u8, true)?;
 
         Ok(())
     }
@@ -361,7 +366,15 @@ where
         Ok(())
     }
 
-    fn read_dxl_message(&mut self, msg_buf: &[u8], response_buf: &mut [u8; 15]) -> Result<()> {
+    /**
+     * Read length must be shorter than response_buf length
+     */
+    fn read_dxl_message(
+        &mut self,
+        msg_buf: &[u8],
+        response_buf: &mut [u8; 15],
+        read_length: usize,
+    ) -> Result<()> {
         // Write message
 
         block_on(async {
@@ -381,7 +394,7 @@ where
                             while !self.dxl_en.is_set_low() {}
                             // wait for answer
                             // block_on(async {
-                            let res = self.dxl.read(response_buf).await;
+                            let res = self.dxl.read(&mut response_buf[..read_length]).await;
                             match res {
                                 Ok(_) => {
                                     // info!("Dynamixel read success: {:x?}", response_buf);
@@ -453,8 +466,10 @@ where
         // Instruction: Read
         msg_buf.push(0x02u8);
 
+        // Position 132
         msg_buf.push(0x84u8);
         msg_buf.push(0x00u8);
+        // Length 4
         msg_buf.push(0x04u8);
         msg_buf.push(0x00u8);
 
@@ -469,11 +484,86 @@ where
         info!("Position Msg: {:02X?}", msg_buf);
 
         let mut response_buf: [u8; 15] = [0u8; 15];
-        self.read_dxl_message(&msg_buf, &mut response_buf)?;
+        let bufsize = response_buf.len();
+        self.read_dxl_message(&msg_buf, &mut response_buf, bufsize)?;
         info!("Dynamixel answer: {:x?}", response_buf);
 
         let position = i32::from_le_bytes(response_buf[9..13].try_into().unwrap());
         info!("Position:{}", position);
+
+        Ok(())
+    }
+
+    /**
+     * LED control
+     * Address 0x41 (65)
+     */
+    fn set_led(&mut self, id: u8, led_on: bool) -> Result<()> {
+        let mut msg_buf = vec![0xFFu8, 0xFFu8, 0xFDu8, 0x00u8];
+        // ID
+        msg_buf.push(id);
+        // Length
+        msg_buf.push(0x06u8);
+        msg_buf.push(0x00u8);
+        // Instruction: Write
+        msg_buf.push(0x03u8);
+
+        // LED control 0x41
+        msg_buf.push(0x41u8);
+        msg_buf.push(0x00u8);
+
+        // data
+        msg_buf.push(led_on as u8);
+
+        // Get CRC
+        let mut crc_state = State::<BUYPASS>::new();
+        crc_state.update(&msg_buf);
+        let crc_res = crc_state.get();
+        info!("CRC: {:x?}", crc_res);
+        msg_buf.extend_from_slice(&crc_res.to_le_bytes());
+
+        info!("LED Msg: {:02X?}", msg_buf);
+
+        let mut response_buf: [u8; 8] = [0u8; 8];
+        self.write_dxl_message(&msg_buf, &mut response_buf)?;
+
+        Ok(())
+    }
+
+    /**
+     * Turn on / off torque control
+     * Address 0x40 (64)
+     */
+    fn enable_torque(&mut self, id: u8, enable: bool) -> Result<()> {
+        let mut msg_buf = vec![0xFFu8, 0xFFu8, 0xFDu8, 0x00u8];
+        // ID
+        msg_buf.push(id);
+        // Length
+        msg_buf.push(0x06u8);
+        msg_buf.push(0x00u8);
+        // Instruction: Write
+        msg_buf.push(0x03u8);
+
+        // Torque control 0x40
+        msg_buf.push(0x40u8);
+        msg_buf.push(0x00u8);
+
+        // data
+        msg_buf.push(enable as u8);
+
+        // Get CRC
+        let mut crc_state = State::<BUYPASS>::new();
+        crc_state.update(&msg_buf);
+        let crc_res = crc_state.get();
+        info!("CRC: {:x?}", crc_res);
+        msg_buf.extend_from_slice(&crc_res.to_le_bytes());
+
+        info!("Torque Msg: {:02X?}", msg_buf);
+
+        let mut response_buf: [u8; 15] = [0u8; 15];
+        let bufsize = 11;
+        self.read_dxl_message(&msg_buf, &mut response_buf, bufsize)?;
+        info!("Dynamixel read success: {:x?}", response_buf);
 
         Ok(())
     }
