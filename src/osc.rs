@@ -43,7 +43,7 @@ pub struct OscReceiver {
     sock: UdpSocket,
     buf: [u8; rosc::decoder::MTU],
     sender: FrameProducer<'static, MSG_BUF_DOWNSTREAM>,
-    modbus_sender: FrameProducer<'static, MSG_DXL_BUF_DOWNSTREAM>,
+    dxl_sender: FrameProducer<'static, MSG_DXL_BUF_DOWNSTREAM>,
 }
 
 impl OscReceiver {
@@ -51,7 +51,7 @@ impl OscReceiver {
         ip: embedded_svc::ipv4::Ipv4Addr,
         recv_port: u16,
         sender: FrameProducer<'static, MSG_BUF_DOWNSTREAM>,
-        modbus_sender: FrameProducer<'static, MSG_DXL_BUF_DOWNSTREAM>,
+        dxl_sender: FrameProducer<'static, MSG_DXL_BUF_DOWNSTREAM>,
     ) -> Self {
         let recv_addr = SocketAddrV4::new(ip, recv_port);
         let sock = UdpSocket::bind(recv_addr).unwrap();
@@ -63,7 +63,7 @@ impl OscReceiver {
             sock,
             buf,
             sender,
-            modbus_sender,
+            dxl_sender,
         }
     }
 
@@ -250,7 +250,7 @@ impl OscReceiver {
         // info!("Dxl downstream buf:{:02X?}", msg_buf);
 
         let sz = msg_buf.len();
-        if let Ok(mut wg) = self.modbus_sender.grant(sz) {
+        if let Ok(mut wg) = self.dxl_sender.grant(sz) {
             wg.to_commit(sz);
             wg.copy_from_slice(msg_buf.as_slice());
             wg.commit(sz);

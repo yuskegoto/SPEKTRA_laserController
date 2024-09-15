@@ -1,5 +1,5 @@
 # About
-- Rust project for the NSK 2024 angle encoder
+- Rust project for the SPEKTRA flat laser device
 ## Versions
 0. Dynamixel angle set and read. Laser color set commands working.
 
@@ -58,11 +58,6 @@ cargo build --offline
 # Protocol
 [Protocol List](https://docs.google.com/spreadsheets/d/1DaNTpB7jWGoRZkjAx4mv4fX9doqdj3NTubLn8uKJP9o/edit?usp=sharing)
 
-## How to test
-```
-oscd
-```
-
 ### Commands
 
 ## Crate
@@ -74,8 +69,3 @@ oscd
 - [Rust-ESP32-STD-demo](https://github.com/ivmarkov/rust-esp32-std-demo/blob/main/src/main.rs)
 - [ESP-IDF-SVC ethernet sample](https://github.com/esp-rs/esp-idf-svc/blob/master/examples/eth.rs)
 - [ESP-IDF-HAL-LEDC](https://github.com/esp-rs/esp-idf-hal/blob/master/examples/ledc_threads.rs)
-## TODO
-[x] Get speed
-[x] PWM solenoid
-[] Modbus
-[] Catch, release in us order

@@ -45,7 +45,7 @@ const SOFTWARE_VERSION: u8 = 0;
 const MSG_BUF_DOWNSTREAM: usize = 64;
 const MSG_BUF_UPSTREAM: usize = 64;
 
-// Modbus message queue buffer
+// Dynamixel message queue buffer
 const MSG_DXL_BUF_DOWNSTREAM: usize = 64;
 const MSG_DXL_BUF_UPSTREAM: usize = 64;
 
@@ -283,7 +283,7 @@ fn main() -> Result<()> {
     let (downstream_msg_producer, downstream_msg_consumer) =
         QUEUE_DOWNSTREAM.try_split_framed().unwrap();
 
-    // Modbus queue, to the upstream, PC via OSC
+    // Dynamixel queue, to the upstream, PC via OSC
     let (dxl_upstream_msg_producer, dxl_upstream_msg_consumer) =
         QUEUE_DXL_UPSTREAM.try_split_framed().unwrap();
     // To the oriental motor via dynamixel
@@ -340,7 +340,7 @@ fn main() -> Result<()> {
             }
         })?;
 
-    // Modbus communication thread to Oriental motors
+    // Dynamixel communication thread to Oriental motors
     let dxl_join_handle = std::thread::Builder::new()
         .stack_size(12288)
         .spawn(move || {
