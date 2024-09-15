@@ -33,6 +33,8 @@ const YAW_LIMIT_ANGLE: f32 = 181.0;
 const DYNAMIXEL_PACKET_HEADER: [u8; 4] = [0xFFu8, 0xFFu8, 0xFDu8, 0x00u8];
 
 const RESPONSE_BUF_SIZE: usize = 15;
+const DYNAMIXEL_INITIAL_MAX_SPEED: u16 = 100;
+const DYNAMIXEL_INITIAL_MAX_ACCELARATION: u16 = 3;
 
 #[allow(dead_code)]
 #[derive(FromPrimitive, Clone, Copy, PartialEq)]
@@ -43,6 +45,8 @@ enum DxlInstruction {
 }
 
 enum DxlAddress {
+    ProfileAccel = 0x6c,    //108,
+    ProfileVelocity = 0x70, // 112
     GoalPosition = 0x74,
 }
 
@@ -62,6 +66,8 @@ pub struct Dynamixel<'a, V: Pin> {
     yaw_angle_f: f32,
     pitch_angle: i32,
     yaw_angle: i32,
+    max_speed: u16,
+    max_accel: u16,
     angle_report_timestamp: SystemTime,
     response_buf: [u8; RESPONSE_BUF_SIZE],
 }
@@ -88,6 +94,8 @@ where
             pitch_angle: 0,
             yaw_angle_f: 0.0,
             yaw_angle: 0,
+            max_speed: DYNAMIXEL_INITIAL_MAX_SPEED,
+            max_accel: DYNAMIXEL_INITIAL_MAX_ACCELARATION,
             angle_report_timestamp,
             response_buf,
         }
@@ -96,11 +104,19 @@ where
     pub fn init(&mut self) -> Result<()> {
         self.ping(Motor::Yaw)?;
         self.ping(Motor::Pitch)?;
-        self.read_angle(Motor::Yaw)?;
+        delay::Ets::delay_ms(10);
+
         self.set_led(Motor::Yaw, true)?;
         self.set_led(Motor::Pitch, true)?;
+        delay::Ets::delay_ms(10);
+
+        self.set_max_speed(self.max_speed as u32)?;
+        self.set_max_accel(self.max_accel as u32)?;
+        delay::Ets::delay_ms(10);
+
         self.enable_torque(Motor::Yaw, true)?;
         self.enable_torque(Motor::Pitch, true)?;
+        delay::Ets::delay_ms(10);
 
         Ok(())
     }
@@ -119,6 +135,14 @@ where
                 Msg::AngleSet => {
                     self.set_angle(Motor::Yaw, self.yaw_angle)?;
                     self.set_angle(Motor::Pitch, self.pitch_angle)?;
+                }
+                Msg::MaxSpeedSet => {
+                    info!("Setting Max Speed:{}", self.max_speed);
+                    self.set_max_speed(self.max_speed as u32)?;
+                }
+                Msg::MaxAccelSet => {
+                    info!("Setting Max Acceleration:{}", self.max_accel);
+                    self.set_max_accel(self.max_accel as u32)?;
                 }
                 _ => {}
             }
@@ -157,6 +181,21 @@ where
         std::thread::sleep(DYNAMIXEL_TASK_INTERVAL_MS);
     }
 
+    fn set_max_speed(&mut self, max_speed: u32) -> Result<()> {
+        self.set_control_table_value(Motor::Yaw, max_speed, DxlAddress::ProfileVelocity)?;
+        self.set_control_table_value(Motor::Pitch, max_speed, DxlAddress::ProfileVelocity)?;
+        // info!("set max speed done: {:x?}", self.response_buf);
+
+        Ok(())
+    }
+
+    fn set_max_accel(&mut self, max_accel: u32) -> Result<()> {
+        self.set_control_table_value(Motor::Yaw, max_accel, DxlAddress::ProfileAccel)?;
+        self.set_control_table_value(Motor::Pitch, max_accel, DxlAddress::ProfileAccel)?;
+        // info!("set max speed done: {:x?}", self.response_buf);
+
+        Ok(())
+    }
     // fn write_dxl_message(&mut self, msg_buf: &[u8], response_buf: &mut [u8; 8]) -> Result<()> {
     //     // Write message
     //     let mut res_buf: [u8; 14] = [0u8; 14];
@@ -408,7 +447,7 @@ where
         // info!("CRC: {:x?}", crc_res);
         msg_buf.extend_from_slice(&crc_res.to_le_bytes());
 
-        // info!("Torque Msg: {:02X?}", msg_buf);
+        info!("Torque Msg: {:02X?}", msg_buf);
 
         // let mut response_buf: [u8; 15] = [0u8; 15];
         // let bufsize = 11;
@@ -445,10 +484,48 @@ where
         Ok(())
     }
 
+    fn set_control_table_value(
+        &mut self,
+        id: Motor,
+        setting_value: u32,
+        address: DxlAddress,
+    ) -> Result<()> {
+        let mut msg_buf = DYNAMIXEL_PACKET_HEADER.to_vec();
+        msg_buf.push(id as u8);
+        // Length
+        msg_buf.push(0x09u8);
+        msg_buf.push(0x0u8);
+        // Instruction: Write
+        msg_buf.push(DxlInstruction::Write as u8);
+        // Address
+        msg_buf.push(address as u8);
+        msg_buf.push(0x0u8);
+        // speed setting
+        msg_buf.extend_from_slice(&setting_value.to_le_bytes());
+
+        // Get CRC
+        let mut crc_state = State::<BUYPASS>::new();
+        crc_state.update(&msg_buf);
+        let crc_res = crc_state.get();
+        msg_buf.extend_from_slice(&crc_res.to_le_bytes());
+
+        info!(
+            "Set control table value Msg: {} {:02X?}",
+            setting_value, msg_buf
+        );
+        self.read_write_dxl_message(&msg_buf, 11)?;
+
+        Ok(())
+    }
+
     // Handle message from OSC downstream
     fn check_downstream_message(&mut self) -> Result<Msg> {
         if let Some(frame) = self.receiver.read() {
-            // info!("Dynamixel downstream msg:{:x} Size:{}", frame[0], frame.len());
+            // info!(
+            //     "Dynamixel downstream msg:{:x} Size:{}",
+            //     frame[0],
+            //     frame.len()
+            // );
             let msg_type: Option<Msg> = num::FromPrimitive::from_u8(frame[0]);
 
             let ret_msg = match msg_type {
@@ -465,12 +542,30 @@ where
                             (self.pitch_angle_f / 360.0 * DYNAMIXEL_RESOLUTION) as i32;
                         self.pitch_angle += DYNAMIXEL_RESOLUTION as i32 / 2;
 
-                        info!(
-                            "Yaw:{}, {} Pitch:{}, {}",
-                            self.yaw_angle_f, self.yaw_angle, self.pitch_angle_f, self.pitch_angle
-                        );
+                        // info!(
+                        //     "Yaw:{}, {} Pitch:{}, {}",
+                        //     self.yaw_angle_f, self.yaw_angle, self.pitch_angle_f, self.pitch_angle
+                        // );
 
                         Msg::AngleSet
+                    } else {
+                        Msg::None
+                    }
+                }
+                Some(Msg::MaxSpeedSet) => {
+                    if frame.len() == 3 {
+                        self.max_speed = u16::from_be_bytes([frame[1], frame[2]]);
+
+                        Msg::MaxSpeedSet
+                    } else {
+                        Msg::None
+                    }
+                }
+                Some(Msg::MaxAccelSet) => {
+                    if frame.len() == 3 {
+                        self.max_accel = u16::from_be_bytes([frame[1], frame[2]]);
+
+                        Msg::MaxAccelSet
                     } else {
                         Msg::None
                     }

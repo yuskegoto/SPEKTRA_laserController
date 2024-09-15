@@ -71,7 +71,7 @@ const GATEWAY_IP: &str = "192.168.1.1";
 const LOCAL_IP: &str = "192.168.1.110";
 const DEST_IP: &str = "192.168.1.100";
 
-const ANGLE_REPORT_INTERVAL_MS: u128 = 1000; // 30Hz
+const ANGLE_REPORT_INTERVAL_MS: u128 = 1000 / 60; // 60Hz
 
 // Used for looking up device number
 const MAC_ADDRESS_LIST: [[u8; 6]; 1] = [[0xfc, 0xb4, 0x67, 0xcf, 0x14, 0x34]];
@@ -342,7 +342,7 @@ fn main() -> Result<()> {
 
     // Modbus communication thread to Oriental motors
     let dxl_join_handle = std::thread::Builder::new()
-        .stack_size(10240)
+        .stack_size(12288)
         .spawn(move || {
             let mut dxl = Dynamixel::new(
                 dxl_upstream_msg_producer,

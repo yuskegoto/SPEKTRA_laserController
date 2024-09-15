@@ -23,10 +23,15 @@ use crate::{MSG_BUF_DOWNSTREAM, MSG_BUF_UPSTREAM, MSG_DXL_BUF_DOWNSTREAM, MSG_DX
 #[derive(FromPrimitive, Clone, Copy, PartialEq)]
 pub enum Msg {
     None = 0,
-    Error = 100,
+    Error = 0xFF,
+
+    AngleSet = 0x01,
     AngleReport = 0x02,
+    MaxSpeedSet = 0x03,
+    MaxAccelSet = 0x04,
+
     ColorSet = 0x10,
-    AngleSet = 0x11,
+    MaxDutySet = 0x12,
 
     // Controller messages
     Boot = 0x70,
@@ -72,8 +77,8 @@ impl OscReceiver {
                     Ok((_, packet)) => {
                         match packet {
                             OscPacket::Message(msg) => {
-                                info!("OSC address: {}", msg.addr);
-                                info!("OSC arguments: {:?}, len:{}", msg.args, msg.args.len());
+                                // info!("OSC address: {}", msg.addr);
+                                // info!("OSC arguments: {:?}, len:{}", msg.args, msg.args.len());
 
                                 match msg.addr.as_str() {
                                     "/reset" => {
@@ -95,11 +100,11 @@ impl OscReceiver {
                                                     commandbuf.extend_from_slice(&serialized);
                                                 }
                                             }
-                                            info!("Color set:{:02X?}", commandbuf);
+                                            // info!("Color set:{:02X?}", commandbuf);
                                             self.send_downstream_buffer(Msg::ColorSet, &commandbuf);
                                         }
                                     }
-                                    "/angleset" => {
+                                    "/setangle" => {
                                         if msg.args.len() == 2 {
                                             let mut commandbuf = vec![];
                                             for arg in msg.args.iter() {
@@ -110,9 +115,67 @@ impl OscReceiver {
                                                     commandbuf.extend_from_slice(&serialized);
                                                 }
                                             }
-                                            info!("Angle set:{:02X?}", commandbuf);
+                                            // info!("Angle set:{:02X?}", commandbuf);
                                             self.send_dxl_downstream_buffer(
                                                 Msg::AngleSet,
+                                                &commandbuf,
+                                            );
+                                        }
+                                    }
+
+                                    "/setmaxduty" => {
+                                        if msg.args.len() == 1 {
+                                            let mut commandbuf = vec![];
+                                            for arg in msg.args.iter() {
+                                                let val = arg.clone().float();
+                                                if let Some(v) = val {
+                                                    let serialized =
+                                                        bincode::serialize(&v).unwrap();
+                                                    commandbuf.extend_from_slice(&serialized);
+                                                }
+                                            }
+                                            self.send_downstream_buffer(
+                                                Msg::MaxDutySet,
+                                                &commandbuf,
+                                            );
+                                        }
+                                    }
+
+                                    "/setmaxspeed" => {
+                                        if msg.args.len() == 1 {
+                                            let mut commandbuf = vec![];
+                                            for arg in msg.args.iter() {
+                                                let val = arg.clone().int();
+                                                if let Some(v) = val {
+                                                    let settings =
+                                                        arg.clone().int().unwrap() as u16;
+                                                    commandbuf.extend_from_slice(
+                                                        &(settings.to_be_bytes()),
+                                                    );
+                                                }
+                                            }
+                                            self.send_dxl_downstream_buffer(
+                                                Msg::MaxSpeedSet,
+                                                &commandbuf,
+                                            );
+                                        }
+                                    }
+
+                                    "/setmaxaccel" => {
+                                        if msg.args.len() == 1 {
+                                            let mut commandbuf = vec![];
+                                            for arg in msg.args.iter() {
+                                                let val = arg.clone().int();
+                                                if let Some(v) = val {
+                                                    let settings =
+                                                        arg.clone().int().unwrap() as u16;
+                                                    commandbuf.extend_from_slice(
+                                                        &(settings.to_be_bytes()),
+                                                    );
+                                                }
+                                            }
+                                            self.send_dxl_downstream_buffer(
+                                                Msg::MaxAccelSet,
                                                 &commandbuf,
                                             );
                                         }
