@@ -1,10 +1,7 @@
 # About
 - Rust project for the NSK 2024 angle encoder
 ## Versions
-0. Angle and speed encoder, /catch, /release in ms order
-1. Modbus communication implementation. WIP.
-2. Modbus write working with AsyncUart. Reading is not implemented.
-3. Added 100 us delay
+0. Dynamixel angle set and read. Laser color set commands working.
 
 ## Target
 - Target Hardware [T-Internet-POE](https://www.lilygo.cc/products/t-internet-poe)

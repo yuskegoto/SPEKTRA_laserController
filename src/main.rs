@@ -39,10 +39,7 @@ use device::*;
 mod dxlcomm;
 use dxlcomm::*;
 
-const SOFTWARE_VERSION: u8 = 3;
-
-// Encoder revolutions per actual revolution ratio
-const ENCODER_RATIO: i8 = 1i8;
+const SOFTWARE_VERSION: u8 = 0;
 
 // OSC message queue buffer
 const MSG_BUF_DOWNSTREAM: usize = 64;
@@ -53,6 +50,7 @@ const MSG_DXL_BUF_DOWNSTREAM: usize = 64;
 const MSG_DXL_BUF_UPSTREAM: usize = 64;
 
 const LED_BRIGHTNESS: u8 = 10;
+const LASER_BRIGHTNESS: f32 = 0.2;
 
 static QUEUE_DOWNSTREAM: BBBuffer<MSG_BUF_DOWNSTREAM> = BBBuffer::new();
 static QUEUE_UPSTREM: BBBuffer<MSG_BUF_UPSTREAM> = BBBuffer::new();
@@ -61,7 +59,7 @@ static QUEUE_DXL_DOWNSTREAM: BBBuffer<MSG_DXL_BUF_DOWNSTREAM> = BBBuffer::new();
 static QUEUE_DXL_UPSTREAM: BBBuffer<MSG_DXL_BUF_UPSTREAM> = BBBuffer::new();
 
 const GPIO_SLEEP_DURATION: Duration = Duration::from_millis(10);
-const MODBUS_LISTEN_INTERVAL_MS: Duration = Duration::from_millis(10);
+const DYNAMIXEL_TASK_INTERVAL_MS: Duration = Duration::from_millis(10);
 
 const LOCAL_OSC_RECV_PORT: u16 = 8000;
 const LOCAL_OSC_SEND_PORT: u16 = 8001;
@@ -72,6 +70,8 @@ const DXL_BAUDRATE: u32 = 57_600;
 const GATEWAY_IP: &str = "192.168.1.1";
 const LOCAL_IP: &str = "192.168.1.110";
 const DEST_IP: &str = "192.168.1.100";
+
+const ANGLE_REPORT_INTERVAL_MS: u128 = 1000; // 30Hz
 
 // Used for looking up device number
 const MAC_ADDRESS_LIST: [[u8; 6]; 1] = [[0xfc, 0xb4, 0x67, 0xcf, 0x14, 0x34]];
@@ -98,7 +98,27 @@ fn main() -> Result<()> {
             peripherals.ledc.timer0,
             &ledc_config::TimerConfig::new().frequency(25.kHz().into()),
         )?,
-        peripherals.pins.gpio2,
+        peripherals.pins.gpio15,
+    )?;
+    channel_laser_red.set_duty(0)?;
+
+    let mut channel_laser_green = LedcDriver::new(
+        peripherals.ledc.channel1,
+        LedcTimerDriver::new(
+            peripherals.ledc.timer1,
+            &ledc_config::TimerConfig::new().frequency(25.kHz().into()),
+        )?,
+        peripherals.pins.gpio13,
+    )?;
+    channel_laser_green.set_duty(0)?;
+
+    let mut channel_laser_blue = LedcDriver::new(
+        peripherals.ledc.channel2,
+        LedcTimerDriver::new(
+            peripherals.ledc.timer2,
+            &ledc_config::TimerConfig::new().frequency(25.kHz().into()),
+        )?,
+        peripherals.pins.gpio14,
     )?;
     channel_laser_red.set_duty(0)?;
 
@@ -304,6 +324,7 @@ fn main() -> Result<()> {
                 local_ip,
                 LOCAL_OSC_SEND_PORT,
                 upstream_msg_consumer,
+                dxl_upstream_msg_consumer,
                 dev_no,
             );
             osc_sender.send_bootmsg().unwrap();
@@ -354,6 +375,8 @@ fn main() -> Result<()> {
                     downstream_msg_consumer,
                     ws2812,
                     channel_laser_red,
+                    channel_laser_green,
+                    channel_laser_blue,
                 );
 
                 device_manager.init().unwrap();

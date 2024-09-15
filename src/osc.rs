@@ -17,37 +17,16 @@ extern crate bincode;
 
 const OSC_LISTEN_INTERVAL_MS: Duration = Duration::from_millis(1);
 
-use crate::{MSG_BUF_DOWNSTREAM, MSG_BUF_UPSTREAM, MSG_DXL_BUF_DOWNSTREAM};
+use crate::{MSG_BUF_DOWNSTREAM, MSG_BUF_UPSTREAM, MSG_DXL_BUF_DOWNSTREAM, MSG_DXL_BUF_UPSTREAM};
 
 #[allow(dead_code)]
 #[derive(FromPrimitive, Clone, Copy, PartialEq)]
 pub enum Msg {
     None = 0,
     Error = 100,
-    Angle = 0x02,
-    Speed = 0x03,
-    AngleSpeed = 0x04,
+    AngleReport = 0x02,
     ColorSet = 0x10,
     AngleSet = 0x11,
-    // Actuate = 0x10,
-    // HandRelease = 0x11,
-    HandGrab = 0x12,
-    BrakeRelease = 0x20,
-    BrakeHold = 0x21,
-    Catch = 0x30,
-    Throw = 0x31,
-    CatchMicroSec = 0x32,
-    ThrowMicroSec = 0x33,
-    ResetAngle = 0x40,
-    // Oriental motor commands
-    PitchAngle = 0x50,
-    PitchBrake = 0x51,
-    PitchZHome = 0x52,
-    PitchAlarmReset = 0x53,
-    YawAngle = 0x60,
-    YawBrake = 0x61,
-    YawZHome = 0x62,
-    YawAlarmReset = 0x63,
 
     // Controller messages
     Boot = 0x70,
@@ -240,6 +219,7 @@ impl OscReceiver {
 pub struct OscSender {
     sock: UdpSocket,
     consumer: FrameConsumer<'static, MSG_BUF_UPSTREAM>,
+    dxl_consumer: FrameConsumer<'static, MSG_DXL_BUF_UPSTREAM>,
     dest_addr: SocketAddrV4,
     device_no: u8,
 }
@@ -251,6 +231,7 @@ impl OscSender {
         host_ip: embedded_svc::ipv4::Ipv4Addr,
         host_port: u16,
         consumer: FrameConsumer<'static, MSG_BUF_UPSTREAM>,
+        dxl_consumer: FrameConsumer<'static, MSG_DXL_BUF_UPSTREAM>,
         device_no: u8,
     ) -> Self {
         let dest_addr = SocketAddrV4::new(dest_ip, dest_port);
@@ -260,6 +241,7 @@ impl OscSender {
         Self {
             sock,
             consumer,
+            dxl_consumer,
             dest_addr,
             device_no,
         }
@@ -269,7 +251,84 @@ impl OscSender {
      * Check machine status and if available, dispatches OSC message to upstream
      */
     pub fn run(&mut self) -> Result<()> {
-        // Check if angle data is coming
+        self.handle_device_msg()?;
+        self.handle_dynamixel_msg()?;
+        // // Check if angle data is coming
+        // if let Some(frame) = self.consumer.read() {
+        //     if frame.len() < 2 {
+        //         frame.release();
+        //         return Ok(());
+        //     }
+
+        //     let mut buf = vec![];
+        //     let msg_type: Option<Msg> = num::FromPrimitive::from_u8(frame[0]);
+        //     let mut addr_str = match msg_type {
+        //         Some(Msg::AngleReport) => {
+        //             if frame.len() == 9 {
+        //                 let yawangle: f32 = bincode::deserialize(&frame[1..5]).unwrap();
+        //                 buf.push(OscType::Float(yawangle));
+        //                 let pitchangle: f32 = bincode::deserialize(&frame[5..9]).unwrap();
+        //                 buf.push(OscType::Float(pitchangle));
+        //                 info!("Reporting Angle:{yawangle}, {pitchangle}");
+        //                 "/angle".to_string()
+        //             } else {
+        //                 "/unknown".to_string()
+        //             }
+        //         }
+
+        //         Some(Msg::SetDestIp) => {
+        //             if frame.len() == 5 {
+        //                 self.set_dest_ip(&frame[1..5]);
+        //                 let ip_addr = self.dest_addr.ip().octets();
+        //                 for ip in ip_addr.iter() {
+        //                     buf.push(OscType::Int(*ip as i32));
+        //                 }
+
+        //                 "/destip".to_string()
+        //             } else {
+        //                 "/unknown".to_string()
+        //             }
+        //         }
+
+        //         _ => {
+        //             // Append header to the packet for debug
+        //             buf.push(OscType::Int(frame[0] as i32));
+        //             buf.push(OscType::Int(frame[1] as i32));
+        //             "/unknown".to_string()
+        //         }
+        //     };
+
+        //     frame.release();
+        //     addr_str += self.device_no.to_string().as_str();
+
+        //     let msg_buf = rosc::encoder::encode(&OscPacket::Message(OscMessage {
+        //         addr: addr_str,
+        //         args: buf,
+        //     }))?;
+
+        //     let ret = self.sock.send_to(&msg_buf, self.dest_addr);
+        //     match ret {
+        //         Ok(_) => {
+        //             // info!("Sent out osc msg to PC");
+        //         }
+        //         Err(e) => {
+        //             error!("Error sending out osc msg to PC: {e}");
+        //         }
+        //     }
+        // };
+
+        Ok(())
+    }
+
+    /**
+     * Sleep until next interval
+     */
+    pub fn idle(&self) {
+        std::thread::sleep(OSC_LISTEN_INTERVAL_MS);
+    }
+
+    fn handle_device_msg(&mut self) -> Result<()> {
+        // Check if message from device task is coming
         if let Some(frame) = self.consumer.read() {
             if frame.len() < 2 {
                 frame.release();
@@ -279,19 +338,18 @@ impl OscSender {
             let mut buf = vec![];
             let msg_type: Option<Msg> = num::FromPrimitive::from_u8(frame[0]);
             let mut addr_str = match msg_type {
-                Some(Msg::Angle) => {
-                    if frame.len() == 9 {
-                        let pitchangle: f32 = bincode::deserialize(&frame[1..5]).unwrap();
-                        buf.push(OscType::Float(pitchangle));
-                        let yawangle: f32 = bincode::deserialize(&frame[5..9]).unwrap();
-                        buf.push(OscType::Float(yawangle));
-                        // info!("Deserialized Angle:{angle}");
-                        "/angle".to_string()
-                    } else {
-                        "/unknown".to_string()
-                    }
-                }
-
+                // Some(Msg::AngleReport) => {
+                //     if frame.len() == 9 {
+                //         let yawangle: f32 = bincode::deserialize(&frame[1..5]).unwrap();
+                //         buf.push(OscType::Float(yawangle));
+                //         let pitchangle: f32 = bincode::deserialize(&frame[5..9]).unwrap();
+                //         buf.push(OscType::Float(pitchangle));
+                //         info!("Reporting Angle:{yawangle}, {pitchangle}");
+                //         "/angle".to_string()
+                //     } else {
+                //         "/unknown".to_string()
+                //     }
+                // }
                 Some(Msg::SetDestIp) => {
                     if frame.len() == 5 {
                         self.set_dest_ip(&frame[1..5]);
@@ -336,11 +394,71 @@ impl OscSender {
         Ok(())
     }
 
-    /**
-     * Sleep until next interval
-     */
-    pub fn idle(&self) {
-        std::thread::sleep(OSC_LISTEN_INTERVAL_MS);
+    fn handle_dynamixel_msg(&mut self) -> Result<()> {
+        // Check if message from the Dynamixel task is coming
+        if let Some(frame) = self.dxl_consumer.read() {
+            if frame.len() < 2 {
+                frame.release();
+                return Ok(());
+            }
+
+            let mut buf = vec![];
+            let msg_type: Option<Msg> = num::FromPrimitive::from_u8(frame[0]);
+            let mut addr_str = match msg_type {
+                Some(Msg::AngleReport) => {
+                    if frame.len() == 9 {
+                        let yawangle: f32 = bincode::deserialize(&frame[1..5]).unwrap();
+                        buf.push(OscType::Float(yawangle));
+                        let pitchangle: f32 = bincode::deserialize(&frame[5..9]).unwrap();
+                        buf.push(OscType::Float(pitchangle));
+                        // info!("Reporting Angle:{yawangle}, {pitchangle}");
+                        "/angle".to_string()
+                    } else {
+                        "/unknown".to_string()
+                    }
+                }
+
+                // Some(Msg::SetDestIp) => {
+                //     if frame.len() == 5 {
+                //         self.set_dest_ip(&frame[1..5]);
+                //         let ip_addr = self.dest_addr.ip().octets();
+                //         for ip in ip_addr.iter() {
+                //             buf.push(OscType::Int(*ip as i32));
+                //         }
+
+                //         "/destip".to_string()
+                //     } else {
+                //         "/unknown".to_string()
+                //     }
+                // }
+                _ => {
+                    // Append header to the packet for debug
+                    buf.push(OscType::Int(frame[0] as i32));
+                    buf.push(OscType::Int(frame[1] as i32));
+                    "/unknown".to_string()
+                }
+            };
+
+            frame.release();
+            addr_str += self.device_no.to_string().as_str();
+
+            let msg_buf = rosc::encoder::encode(&OscPacket::Message(OscMessage {
+                addr: addr_str,
+                args: buf,
+            }))?;
+
+            let ret = self.sock.send_to(&msg_buf, self.dest_addr);
+            match ret {
+                Ok(_) => {
+                    // info!("Sent out osc msg to PC");
+                }
+                Err(e) => {
+                    error!("Error sending out osc msg to PC: {e}");
+                }
+            }
+        };
+
+        Ok(())
     }
 
     /**

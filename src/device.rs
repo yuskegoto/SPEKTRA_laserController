@@ -15,8 +15,7 @@ extern crate bincode;
 
 use crate::Msg;
 use crate::{
-    ENCODER_RATIO, GPIO_SLEEP_DURATION, LED_BRIGHTNESS, MSG_BUF_DOWNSTREAM, MSG_BUF_UPSTREAM,
-    SOFTWARE_VERSION,
+    LASER_BRIGHTNESS, LED_BRIGHTNESS, MSG_BUF_DOWNSTREAM, MSG_BUF_UPSTREAM, SOFTWARE_VERSION,
 };
 
 const AS5600_ADDRESS: u8 = 0x36;
@@ -40,6 +39,7 @@ struct DeviceState {
     color_r: f32,
     color_b: f32,
     color_g: f32,
+    laser_brightness: f32,
 }
 // struct ActionState {
 //     brake_release_delay_ms: u16,
@@ -69,9 +69,11 @@ pub struct Device<'a> {
     ws2812: Ws2812Esp32Rmt<'a>,
     // pin_solenoid: PinDriver<'a, U, Output>,
     channel_laser_red: ledc::LedcDriver<'a>,
+    channel_laser_green: ledc::LedcDriver<'a>,
+    channel_laser_blue: ledc::LedcDriver<'a>,
     // pin_brake: PinDriver<'a, V, Output>,
-    solenoid_activate_duty: u32,
-    ts: SystemTime,
+    // solenoid_activate_duty: u32,
+    // ts: SystemTime,
 }
 
 impl<'a> Device<'a>
@@ -87,6 +89,8 @@ where
         ws2812: Ws2812Esp32Rmt<'a>,
         // pin_solenoid: PinDriver<'a, U, Output>,
         channel_laser_red: ledc::LedcDriver<'a>,
+        channel_laser_green: ledc::LedcDriver<'a>,
+        channel_laser_blue: ledc::LedcDriver<'a>,
         // pin_brake: PinDriver<'a, V, Output>,
     ) -> Self {
         let state = DeviceState {
@@ -106,6 +110,7 @@ where
             color_r: 0f32,
             color_b: 0f32,
             color_g: 0f32,
+            laser_brightness: LASER_BRIGHTNESS,
         };
 
         // let action = ActionState {
@@ -126,9 +131,9 @@ where
         //     solenoid_boot_duration_ms: 1000u16,
         // };
 
-        let solenoid_activate_duty =
-            channel_laser_red.get_max_duty() * SOLENOID_ACTIVATE_DUTY_PPERCENT / 100;
-        let ts: SystemTime = SystemTime::now();
+        // let solenoid_activate_duty =
+        //     channel_laser_red.get_max_duty() * SOLENOID_ACTIVATE_DUTY_PPERCENT / 100;
+        // let ts: SystemTime = SystemTime::now();
 
         Self {
             sender,
@@ -137,14 +142,15 @@ where
             // action,
             ws2812,
             channel_laser_red,
-            // pin_brake,
-            solenoid_activate_duty,
-            ts,
+            channel_laser_green,
+            channel_laser_blue,
+            // solenoid_activate_duty,
+            // ts,
         }
     }
 
     pub fn init(&mut self) -> Result<()> {
-        self.set_laser_color(0.0, 0.0, 0.0)?;
+        self.set_laser_color(0.5, 0.5, 0.5)?;
         self.update_led(0u8, 5u8, 0u8)?;
 
         Ok(())
@@ -152,21 +158,6 @@ where
 
     // Main device update loop
     pub fn update(&mut self) -> Result<()> {
-        // Read mag encoder
-        // if (self.state.encoder_read_counter % SENSOR_READ_INTERVAL) == 0 {
-        //     if let Ok((angle_data, speed_data)) = self.read_sensor() {
-        //         let _ = self.send_upstream_message_float_2(Msg::AngleSpeed, angle_data, speed_data);
-        //     };
-        //     self.state.encoder_read_counter = 0;
-
-        //     // info!(
-        //     //     "sensing loop: {:?}us",
-        //     //     self.ts.elapsed().unwrap().as_micros()
-        //     // );
-        //     // self.ts = SystemTime::now();
-        // }
-        // self.state.encoder_read_counter += 1;
-
         let ret = self.check_downstream_message();
 
         // If got action message, issue actuation command!
@@ -180,9 +171,17 @@ where
                     let g: u8 = (self.state.color_g * LED_BRIGHTNESS as f32) as u8;
                     let b: u8 = (self.state.color_b * LED_BRIGHTNESS as f32) as u8;
                     self.update_led(r, g, b)?;
+                    self.set_laser_color(
+                        self.state.color_r,
+                        self.state.color_g,
+                        self.state.color_b,
+                    )?;
+                    info!("Color set: R:{}, G:{}, B:{}", r, g, b);
                 }
                 _ => {}
             }
+        } else {
+            self.update_led(0, 0, 0)?;
         }
 
         Ok(())
@@ -384,10 +383,14 @@ where
     // }
 
     fn set_laser_color(&mut self, red: f32, green: f32, blue: f32) -> Result<()> {
-        let res = self
-            .channel_laser_red
-            .set_duty(self.channel_laser_red.get_max_duty())
-            .unwrap();
+        let r = (self.channel_laser_red.get_max_duty() as f32 * red * LASER_BRIGHTNESS) as u32;
+        let _ = self.channel_laser_red.set_duty(r);
+
+        let g = (self.channel_laser_green.get_max_duty() as f32 * green * LASER_BRIGHTNESS) as u32;
+        let _ = self.channel_laser_green.set_duty(g);
+
+        let b = (self.channel_laser_blue.get_max_duty() as f32 * blue * LASER_BRIGHTNESS) as u32;
+        let _ = self.channel_laser_blue.set_duty(b);
 
         Ok(())
     }
