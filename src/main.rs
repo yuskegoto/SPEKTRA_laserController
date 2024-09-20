@@ -1,6 +1,8 @@
 use anyhow::*;
+use esp_idf_hal::ledc::SpeedMode;
 use log::*;
 use std::result::Result::Ok;
+use std::sync::mpsc::channel;
 // use std::sync::Arc;
 
 use esp_idf_sys::{self as _, MALLOC_CAP_8BIT};
@@ -74,7 +76,16 @@ const DEST_IP: &str = "192.168.1.100";
 const ANGLE_REPORT_INTERVAL_MS: u128 = 1000 / 60; // 60Hz
 
 // Used for looking up device number
-const MAC_ADDRESS_LIST: [[u8; 6]; 1] = [[0xfc, 0xb4, 0x67, 0xcf, 0x14, 0x34]];
+const MAC_ADDRESS_LIST: [[u8; 6]; 7] = [
+    [0xfc, 0xb4, 0x67, 0xcf, 0x14, 0x34],
+    [0x24, 0xdc, 0xc3, 0xd0, 0x24, 0x44],
+    [0xfc, 0xb4, 0x67, 0xce, 0x0a, 0xc8],
+    [0xfc, 0xb4, 0x67, 0xcd, 0xd9, 0x04],
+    [0xfc, 0xb4, 0x67, 0xda, 0xdb, 0x40],
+    // [0x24, 0xdc, 0xc3, 0xd0, 0x50, 0x58],
+    [0xfc, 0xb4, 0x67, 0xcf, 0x0c, 0x00],
+    [0xfc, 0xb4, 0x67, 0xda, 0xd8, 0xd0],
+];
 
 fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
@@ -120,7 +131,7 @@ fn main() -> Result<()> {
         )?,
         peripherals.pins.gpio14,
     )?;
-    channel_laser_red.set_duty(0)?;
+    channel_laser_blue.set_duty(0)?;
 
     let mut emac_pwr = PinDriver::output(peripherals.pins.gpio4)?;
     emac_pwr.set_high()?;
@@ -185,7 +196,8 @@ fn main() -> Result<()> {
 
     let res = {
         // Hoping to start up the RMMII
-        delay::Ets::delay_ms(10u32);
+        // delay::Ets::delay_ms(2u32);
+        // delay::Ets::delay_ms(10u32);
 
         let res = esp_idf_svc::eth::EthDriver::new_rmii(
                 peripherals.mac,
@@ -454,10 +466,11 @@ fn lookup_device_no(mac: &[u8; 6]) -> Result<u8> {
         }
         device_no += 1;
     }
-    info!("Device No: {}", device_no);
 
     if !device_no_found {
         device_no = 0;
     }
+    info!("Device No: {}", device_no);
+
     Ok(device_no)
 }
