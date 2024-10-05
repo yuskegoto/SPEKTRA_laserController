@@ -10,9 +10,6 @@
 ## Project
 The project is written on Rust for EPS32.
 
-## Sensor
-[AS5600 data sheet](https://www.mouser.com/pdfdocs/AMS_AS5600_Datasheet_EN.PDF)
-
 ## Environment
 - Windows 11 / DevContainer
 - Target ESP-IDF v5.1.1
@@ -54,6 +51,10 @@ cargo run --features test
 ```
 cargo build --offline
 ```
+
+## Build binary
+Built binary can be found under the /bin
+
 
 # Protocol
 [Protocol List](https://docs.google.com/spreadsheets/d/1DaNTpB7jWGoRZkjAx4mv4fX9doqdj3NTubLn8uKJP9o/edit?usp=sharing)
