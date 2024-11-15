@@ -2,7 +2,7 @@
 - Rust project for the SPEKTRA flat laser device
 ## Versions
 0. Dynamixel angle set and read. Laser color set commands working.
-1. Added positional PID gain controls.
+1. Added positional PID gain controls. Changed color and angle controls to use int for queueing.
 
 ## Target
 - Target Hardware [T-Internet-POE](https://www.lilygo.cc/products/t-internet-poe)

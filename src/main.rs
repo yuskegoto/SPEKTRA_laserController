@@ -53,10 +53,10 @@ const MSG_BUF_DOWNSTREAM: usize = 64;
 const MSG_BUF_UPSTREAM: usize = 64;
 
 // Dynamixel message queue buffer
-const MSG_DXL_BUF_DOWNSTREAM: usize = 128; //64;
+const MSG_DXL_BUF_DOWNSTREAM: usize = 64;
 const MSG_DXL_BUF_UPSTREAM: usize = 64;
 
-const LED_BRIGHTNESS: u8 = 10;
+const LED_BRIGHTNESS: u8 = 8;
 const LASER_BRIGHTNESS: f32 = 0.2;
 
 static QUEUE_DOWNSTREAM: BBBuffer<MSG_BUF_DOWNSTREAM> = BBBuffer::new();
@@ -78,7 +78,7 @@ const GATEWAY_IP: &str = "192.168.1.1";
 const LOCAL_IP: &str = "192.168.1.110";
 const DEST_IP: &str = "192.168.1.100";
 
-const ANGLE_REPORT_INTERVAL_MS: u128 = 1000 / 60; // 60Hz
+const ANGLE_REPORT_INTERVAL_MS: u128 = 1000 / 30; // 30Hz
 
 // Used for looking up device number
 const MAC_ADDRESS_LIST: [[u8; 6]; 7] = [

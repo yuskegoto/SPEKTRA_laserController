@@ -33,9 +33,9 @@ use crate::{
     MSG_DXL_BUF_UPSTREAM,
 };
 
-const DYNAMIXEL_RESOLUTION: f32 = 4096.0;
-const PITCH_LIMIT_ANGLE: f32 = 91.0;
-const YAW_LIMIT_ANGLE: f32 = 181.0;
+pub const DYNAMIXEL_RESOLUTION: f32 = 4096.0;
+pub const PITCH_LIMIT_ANGLE: f32 = 91.0;
+pub const YAW_LIMIT_ANGLE: f32 = 181.0;
 
 const DYNAMIXEL_PACKET_HEADER: [u8; 4] = [0xFFu8, 0xFFu8, 0xFDu8, 0x00u8];
 
@@ -189,21 +189,24 @@ where
         };
         if self.angle_report_timestamp.elapsed().unwrap().as_millis() > ANGLE_REPORT_INTERVAL_MS {
             self.angle_report_timestamp = SystemTime::now();
+            let dynamixel_half_res = (DYNAMIXEL_RESOLUTION / 2.0) as i32;
             if let Ok(angle) = self.read_angle(Motor::Yaw) {
-                self.yaw_angle = angle;
-                self.yaw_angle_f = ((angle as f32 / DYNAMIXEL_RESOLUTION) * 360.0) - 180.0;
-                // info!("Yaw Angle:{}", self.pitch_angle_f);
+                if -dynamixel_half_res < angle && angle < dynamixel_half_res {
+                    self.yaw_angle = angle;
+                    self.yaw_angle_f = ((angle as f32 / DYNAMIXEL_RESOLUTION) * 360.0) - 180.0;
+                    // info!("Yaw Angle:{}", self.pitch_angle_f);
+                }
             }
             if let Ok(angle) = self.read_angle(Motor::Pitch) {
-                self.pitch_angle = angle;
-                self.pitch_angle_f = ((angle as f32 / DYNAMIXEL_RESOLUTION) * 360.0) - 180.0;
-                // info!("Pitch Angle:{}", self.yaw_angle_f);
+                if -dynamixel_half_res < angle && angle < dynamixel_half_res {
+                    self.pitch_angle_f = ((angle as f32 / DYNAMIXEL_RESOLUTION) * 360.0) - 180.0;
+                    // info!("Pitch Angle:{} {}", self.pitch_angle, self.yaw_angle_f);
+                }
             }
-
-            self.send_upstream_message_float_2(
+            self.send_upstream_message_angles(
                 Msg::AngleReport,
-                self.yaw_angle_f,
-                self.pitch_angle_f,
+                self.yaw_angle as i16,
+                self.pitch_angle as i16,
             )?;
         }
 
@@ -602,18 +605,9 @@ where
 
             let ret_msg = match msg_type {
                 Some(Msg::AngleSet) => {
-                    if frame.len() == 9 {
-                        let yaw: f32 = bincode::deserialize(&frame[1..5]).unwrap();
-                        self.yaw_angle_f = yaw.clamp(-YAW_LIMIT_ANGLE, YAW_LIMIT_ANGLE);
-                        self.yaw_angle = (self.yaw_angle_f / 360.0 * DYNAMIXEL_RESOLUTION) as i32;
-                        self.yaw_angle += DYNAMIXEL_RESOLUTION as i32 / 2;
-
-                        let pitch: f32 = bincode::deserialize(&frame[5..9]).unwrap();
-                        self.pitch_angle_f = pitch.clamp(-PITCH_LIMIT_ANGLE, PITCH_LIMIT_ANGLE);
-                        self.pitch_angle =
-                            (self.pitch_angle_f / 360.0 * DYNAMIXEL_RESOLUTION) as i32;
-                        self.pitch_angle += DYNAMIXEL_RESOLUTION as i32 / 2;
-
+                    if frame.len() == 5 {
+                        self.yaw_angle = i16::from_be_bytes([frame[1], frame[2]]) as i32;
+                        self.pitch_angle = i16::from_be_bytes([frame[3], frame[4]]) as i32;
                         // info!(
                         //     "Yaw:{}, {} Pitch:{}, {}",
                         //     self.yaw_angle_f, self.yaw_angle, self.pitch_angle_f, self.pitch_angle
@@ -662,30 +656,19 @@ where
         Ok(Msg::None)
     }
 
-    // /**
-    //  * TODO: Implement angle upstream message!
-    //  */
-    // fn send_upstream_message(&mut self, angle: &[u8; 2]) -> Result<()> {
-    //     if let Ok(mut wg) = self.sender.grant(2) {
-    //         wg.to_commit(2);
-    //         wg.copy_from_slice(angle);
-    //         wg.commit(2);
-    //     }
-    //     Ok(())
-    // }
+    fn send_upstream_message_angles(&mut self, msg: Msg, yaw: i16, pitch: i16) -> Result<()> {
+        if let Ok(mut wg) = self.sender.grant(5) {
+            wg.to_commit(1);
+            wg[0] = msg as u8;
+            wg[1..3].copy_from_slice(&(yaw.to_be_bytes()));
+            wg[3..5].copy_from_slice(&(pitch.to_be_bytes()));
+            wg.commit(5);
+        }
 
-    // fn send_upstream_message_u8(&mut self, msg: Msg, val: u8) -> Result<()> {
-    //     info!("Sending info Msg:{:x}, Val:{:x}", msg as u8, val);
+        Ok(())
+    }
 
-    //     if let Ok(mut wg) = self.sender.grant(2) {
-    //         wg.to_commit(1);
-    //         wg[0] = msg as u8;
-    //         wg[1] = val;
-    //         wg.commit(2);
-    //     }
-    //     Ok(())
-    // }
-
+    #[allow(dead_code)]
     fn send_upstream_message_float_2(&mut self, msg: Msg, val1: f32, val2: f32) -> Result<()> {
         let serialized1 = bincode::serialize(&val1).unwrap();
         let serialized2 = bincode::serialize(&val2).unwrap();

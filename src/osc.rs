@@ -3,7 +3,6 @@ use log::*;
 use num_derive::FromPrimitive;
 
 use esp_idf_hal::reset::restart;
-use num_traits::ToBytes;
 
 extern crate num;
 extern crate num_derive;
@@ -17,6 +16,8 @@ extern crate bincode;
 
 const OSC_LISTEN_INTERVAL_MS: Duration = Duration::from_millis(1);
 
+use crate::LASER_MAX_DUTY;
+use crate::{DYNAMIXEL_RESOLUTION, PITCH_LIMIT_ANGLE, YAW_LIMIT_ANGLE};
 use crate::{MSG_BUF_DOWNSTREAM, MSG_BUF_UPSTREAM, MSG_DXL_BUF_DOWNSTREAM, MSG_DXL_BUF_UPSTREAM};
 
 #[allow(dead_code)]
@@ -96,9 +97,8 @@ impl OscReceiver {
                                             for arg in msg.args.iter() {
                                                 let val = arg.clone().float();
                                                 if let Some(v) = val {
-                                                    let serialized =
-                                                        bincode::serialize(&v).unwrap();
-                                                    commandbuf.extend_from_slice(&serialized);
+                                                    let color = v * LASER_MAX_DUTY as f32;
+                                                    commandbuf.push(color as u8);
                                                 }
                                             }
                                             // info!("Color set:{:02X?}", commandbuf);
@@ -108,12 +108,24 @@ impl OscReceiver {
                                     "/setangle" => {
                                         if msg.args.len() == 2 {
                                             let mut commandbuf = vec![];
-                                            for arg in msg.args.iter() {
-                                                let val = arg.clone().float();
-                                                if let Some(v) = val {
-                                                    let serialized =
-                                                        bincode::serialize(&v).unwrap();
-                                                    commandbuf.extend_from_slice(&serialized);
+                                            for (index, arg) in msg.args.iter().enumerate() {
+                                                if let Some(val) = arg.clone().float() {
+                                                    let angle_f = if index == 0 {
+                                                        val.clamp(-YAW_LIMIT_ANGLE, YAW_LIMIT_ANGLE)
+                                                    } else {
+                                                        val.clamp(
+                                                            -PITCH_LIMIT_ANGLE,
+                                                            PITCH_LIMIT_ANGLE,
+                                                        )
+                                                    };
+                                                    let angle = ((angle_f / 360.0
+                                                        * DYNAMIXEL_RESOLUTION)
+                                                        + DYNAMIXEL_RESOLUTION / 2.0)
+                                                        as i32;
+
+                                                    commandbuf.extend_from_slice(
+                                                        &(angle as i16).to_be_bytes(),
+                                                    );
                                                 }
                                             }
                                             // info!("Angle set:{:02X?}", commandbuf);
@@ -148,8 +160,7 @@ impl OscReceiver {
                                             for arg in msg.args.iter() {
                                                 let val = arg.clone().int();
                                                 if let Some(v) = val {
-                                                    let settings =
-                                                        arg.clone().int().unwrap() as u16;
+                                                    let settings = v as u16;
                                                     commandbuf.extend_from_slice(
                                                         &(settings.to_be_bytes()),
                                                     );
@@ -168,8 +179,7 @@ impl OscReceiver {
                                             for arg in msg.args.iter() {
                                                 let val = arg.clone().int();
                                                 if let Some(v) = val {
-                                                    let settings =
-                                                        arg.clone().int().unwrap() as u16;
+                                                    let settings = v as u16;
                                                     commandbuf.extend_from_slice(
                                                         &(settings.to_be_bytes()),
                                                     );
@@ -186,9 +196,8 @@ impl OscReceiver {
                                         if msg.args.len() == 3 {
                                             let mut commandbuf = vec![];
                                             for arg in msg.args.iter() {
-                                                let val = arg.clone().int();
-                                                if let Some(v) = val {
-                                                    let setting = arg.clone().int().unwrap() as u16;
+                                                if let Some(val) = arg.clone().int() {
+                                                    let setting = val as u16;
                                                     commandbuf.extend_from_slice(
                                                         &(setting.to_be_bytes()),
                                                     );
@@ -225,10 +234,8 @@ impl OscReceiver {
                     }
                     Err(e) => {
                         error!("Error receiving OSC msg: {e}");
-                        ()
                     }
                 }
-                ()
             }
             Err(e) => {
                 error!("Error receiving from socket: {e}");
@@ -336,69 +343,6 @@ impl OscSender {
     pub fn run(&mut self) -> Result<()> {
         self.handle_device_msg()?;
         self.handle_dynamixel_msg()?;
-        // // Check if angle data is coming
-        // if let Some(frame) = self.consumer.read() {
-        //     if frame.len() < 2 {
-        //         frame.release();
-        //         return Ok(());
-        //     }
-
-        //     let mut buf = vec![];
-        //     let msg_type: Option<Msg> = num::FromPrimitive::from_u8(frame[0]);
-        //     let mut addr_str = match msg_type {
-        //         Some(Msg::AngleReport) => {
-        //             if frame.len() == 9 {
-        //                 let yawangle: f32 = bincode::deserialize(&frame[1..5]).unwrap();
-        //                 buf.push(OscType::Float(yawangle));
-        //                 let pitchangle: f32 = bincode::deserialize(&frame[5..9]).unwrap();
-        //                 buf.push(OscType::Float(pitchangle));
-        //                 info!("Reporting Angle:{yawangle}, {pitchangle}");
-        //                 "/angle".to_string()
-        //             } else {
-        //                 "/unknown".to_string()
-        //             }
-        //         }
-
-        //         Some(Msg::SetDestIp) => {
-        //             if frame.len() == 5 {
-        //                 self.set_dest_ip(&frame[1..5]);
-        //                 let ip_addr = self.dest_addr.ip().octets();
-        //                 for ip in ip_addr.iter() {
-        //                     buf.push(OscType::Int(*ip as i32));
-        //                 }
-
-        //                 "/destip".to_string()
-        //             } else {
-        //                 "/unknown".to_string()
-        //             }
-        //         }
-
-        //         _ => {
-        //             // Append header to the packet for debug
-        //             buf.push(OscType::Int(frame[0] as i32));
-        //             buf.push(OscType::Int(frame[1] as i32));
-        //             "/unknown".to_string()
-        //         }
-        //     };
-
-        //     frame.release();
-        //     addr_str += self.device_no.to_string().as_str();
-
-        //     let msg_buf = rosc::encoder::encode(&OscPacket::Message(OscMessage {
-        //         addr: addr_str,
-        //         args: buf,
-        //     }))?;
-
-        //     let ret = self.sock.send_to(&msg_buf, self.dest_addr);
-        //     match ret {
-        //         Ok(_) => {
-        //             // info!("Sent out osc msg to PC");
-        //         }
-        //         Err(e) => {
-        //             error!("Error sending out osc msg to PC: {e}");
-        //         }
-        //     }
-        // };
 
         Ok(())
     }
@@ -421,18 +365,6 @@ impl OscSender {
             let mut buf = vec![];
             let msg_type: Option<Msg> = num::FromPrimitive::from_u8(frame[0]);
             let mut addr_str = match msg_type {
-                // Some(Msg::AngleReport) => {
-                //     if frame.len() == 9 {
-                //         let yawangle: f32 = bincode::deserialize(&frame[1..5]).unwrap();
-                //         buf.push(OscType::Float(yawangle));
-                //         let pitchangle: f32 = bincode::deserialize(&frame[5..9]).unwrap();
-                //         buf.push(OscType::Float(pitchangle));
-                //         info!("Reporting Angle:{yawangle}, {pitchangle}");
-                //         "/angle".to_string()
-                //     } else {
-                //         "/unknown".to_string()
-                //     }
-                // }
                 Some(Msg::SetDestIp) => {
                     if frame.len() == 5 {
                         self.set_dest_ip(&frame[1..5]);
@@ -489,31 +421,22 @@ impl OscSender {
             let msg_type: Option<Msg> = num::FromPrimitive::from_u8(frame[0]);
             let mut addr_str = match msg_type {
                 Some(Msg::AngleReport) => {
-                    if frame.len() == 9 {
-                        let yawangle: f32 = bincode::deserialize(&frame[1..5]).unwrap();
+                    // if frame.len() == 9 {
+                    if frame.len() == 5 {
+                        //     let yawangle: f32 = bincode::deserialize(&frame[1..5]).unwrap();
+                        let yaw_i = i16::from_be_bytes([frame[1], frame[2]]);
+                        let yawangle = (yaw_i as f32 / DYNAMIXEL_RESOLUTION) * 360.0 - 180.0;
                         buf.push(OscType::Float(yawangle));
-                        let pitchangle: f32 = bincode::deserialize(&frame[5..9]).unwrap();
+                        //     let pitchangle: f32 = bincode::deserialize(&frame[5..9]).unwrap();
+                        let pitch_i = i16::from_be_bytes([frame[3], frame[4]]);
+                        let pitchangle = (pitch_i as f32 / DYNAMIXEL_RESOLUTION) * 360.0 - 180.0;
                         buf.push(OscType::Float(pitchangle));
-                        // info!("Reporting Angle:{yawangle}, {pitchangle}");
+                        // info!("Reporting Angle: {yaw_i} {yawangle}, {pitch_i} {pitchangle}");
                         "/angle".to_string()
                     } else {
                         "/unknown".to_string()
                     }
                 }
-
-                // Some(Msg::SetDestIp) => {
-                //     if frame.len() == 5 {
-                //         self.set_dest_ip(&frame[1..5]);
-                //         let ip_addr = self.dest_addr.ip().octets();
-                //         for ip in ip_addr.iter() {
-                //             buf.push(OscType::Int(*ip as i32));
-                //         }
-
-                //         "/destip".to_string()
-                //     } else {
-                //         "/unknown".to_string()
-                //     }
-                // }
                 _ => {
                     // Append header to the packet for debug
                     buf.push(OscType::Int(frame[0] as i32));
@@ -563,7 +486,7 @@ impl OscSender {
     fn set_dest_ip(&mut self, ip: &[u8]) {
         if ip.len() == 4 {
             let mut newip = [0u8; 4];
-            newip.copy_from_slice(&ip);
+            newip.copy_from_slice(ip);
             let dest_ip = Ipv4Addr::from(newip);
             self.dest_addr.set_ip(dest_ip);
             info!("New Dest IP:{:?}", dest_ip);
