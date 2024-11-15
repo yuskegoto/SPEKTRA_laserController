@@ -2,6 +2,7 @@
 - Rust project for the SPEKTRA flat laser device
 ## Versions
 0. Dynamixel angle set and read. Laser color set commands working.
+1. Added positional PID gain controls.
 
 ## Target
 - Target Hardware [T-Internet-POE](https://www.lilygo.cc/products/t-internet-poe)
@@ -24,7 +25,7 @@ The project is written on Rust for EPS32.
 cargo run
 espflash board-info
 espmonitor <OCM_PORT_NO>
-espflash flash  --monitor -p=/dev/ttyACM1 ./bin/encoderosc
+espflash flash  --monitor -p=/dev/ttyACM1 ./bin/spektra_shutl_laser
 ```
 
 ```Bash
@@ -35,13 +36,13 @@ espmonitor /dev/ttyACM1
 ### Current workflow using DevContainer
 ```DevContainer
 cargo build
-web-flash --chip esp32 target/xtensa-esp32-espidf/debug/encoderosc
+web-flash --chip esp32 target/xtensa-esp32-espidf/debug/spektra_shutl_laser
 
 # Move the binary to windows side (From ubuntu terminal)
 cp target/xtensa-esp32-espidf/debug/spektra_shutl_laser /mnt/c/Users/donne/Desktop
 
 # Then flash from powershell (Windows side)
-espflash flash --baud 2000000 encoderosc
+espflash flash --baud 2000000 spektra_shutl_laser
 ```
 
 ## Test Build

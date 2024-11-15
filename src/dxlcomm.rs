@@ -1,17 +1,24 @@
 use anyhow::Result;
-use esp_idf_hal::io::Write;
+// use esp_idf_hal::io::Write;
 use log::*;
-use num_traits::ToBytes;
-use std::time::{Duration, SystemTime};
+// use num_traits::ToBytes;
+use std::time::{
+    // Duration,
+    SystemTime,
+};
 
 use esp_idf_hal::{
     delay,
     gpio::*,
     task::*,
-    uart::{AsyncUartDriver, Uart, UartDriver},
+    uart::{
+        AsyncUartDriver,
+        //  Uart,
+        UartDriver,
+    },
 };
-use esp_idf_svc::systime::EspSystemTime;
-use esp_idf_sys::EspError;
+// use esp_idf_svc::systime::EspSystemTime;
+// use esp_idf_sys::EspError;
 
 use bbqueue::framed::{FrameConsumer, FrameProducer};
 use crc16::*;
@@ -35,6 +42,9 @@ const DYNAMIXEL_PACKET_HEADER: [u8; 4] = [0xFFu8, 0xFFu8, 0xFDu8, 0x00u8];
 const RESPONSE_BUF_SIZE: usize = 15;
 const DYNAMIXEL_INITIAL_MAX_SPEED: u16 = 100;
 const DYNAMIXEL_INITIAL_MAX_ACCELARATION: u16 = 3;
+const DYNAMIXEL_INITIAL_POSITOIN_P_GAIN: u16 = 640;
+const DYNAMIXEL_INITIAL_POSITOIN_I_GAIN: u16 = 0;
+const DYNAMIXEL_INITIAL_POSITOIN_D_GAIN: u16 = 4000;
 
 #[allow(dead_code)]
 #[derive(FromPrimitive, Clone, Copy, PartialEq)]
@@ -45,6 +55,10 @@ enum DxlInstruction {
 }
 
 enum DxlAddress {
+    PositionPGain = 0x54, //84
+    PositionIGain = 0x55, //85
+    PositionDGain = 0x56, //86
+
     ProfileAccel = 0x6c,    //108,
     ProfileVelocity = 0x70, // 112
     GoalPosition = 0x74,
@@ -68,6 +82,9 @@ pub struct Dynamixel<'a, V: Pin> {
     yaw_angle: i32,
     max_speed: u16,
     max_accel: u16,
+    position_p_gain: u16,
+    position_i_gain: u16,
+    position_d_gain: u16,
     angle_report_timestamp: SystemTime,
     response_buf: [u8; RESPONSE_BUF_SIZE],
 }
@@ -96,6 +113,9 @@ where
             yaw_angle: 0,
             max_speed: DYNAMIXEL_INITIAL_MAX_SPEED,
             max_accel: DYNAMIXEL_INITIAL_MAX_ACCELARATION,
+            position_p_gain: DYNAMIXEL_INITIAL_POSITOIN_P_GAIN,
+            position_i_gain: DYNAMIXEL_INITIAL_POSITOIN_I_GAIN,
+            position_d_gain: DYNAMIXEL_INITIAL_POSITOIN_D_GAIN,
             angle_report_timestamp,
             response_buf,
         }
@@ -112,6 +132,13 @@ where
 
         self.set_max_speed(self.max_speed as u32)?;
         self.set_max_accel(self.max_accel as u32)?;
+        delay::Ets::delay_ms(10);
+
+        self.set_position_gains(
+            self.position_p_gain as u32,
+            self.position_i_gain as u32,
+            self.position_d_gain as u32,
+        )?;
         delay::Ets::delay_ms(10);
 
         self.enable_torque(Motor::Yaw, true)?;
@@ -143,6 +170,17 @@ where
                 Msg::MaxAccelSet => {
                     info!("Setting Max Acceleration:{}", self.max_accel);
                     self.set_max_accel(self.max_accel as u32)?;
+                }
+                Msg::PositionGainSet => {
+                    info!(
+                        "Setting Positon Gains P:{} I:{} D:{}",
+                        self.position_p_gain, self.position_i_gain, self.position_d_gain
+                    );
+                    self.set_position_gains(
+                        self.position_p_gain as u32,
+                        self.position_d_gain as u32,
+                        self.position_d_gain as u32,
+                    )?;
                 }
                 _ => {}
             }
@@ -183,7 +221,9 @@ where
 
     fn set_max_speed(&mut self, max_speed: u32) -> Result<()> {
         self.set_control_table_value(Motor::Yaw, max_speed, DxlAddress::ProfileVelocity)?;
+        delay::Ets::delay_ms(1);
         self.set_control_table_value(Motor::Pitch, max_speed, DxlAddress::ProfileVelocity)?;
+        delay::Ets::delay_ms(1);
         // info!("set max speed done: {:x?}", self.response_buf);
 
         Ok(())
@@ -191,11 +231,43 @@ where
 
     fn set_max_accel(&mut self, max_accel: u32) -> Result<()> {
         self.set_control_table_value(Motor::Yaw, max_accel, DxlAddress::ProfileAccel)?;
+        delay::Ets::delay_ms(1);
         self.set_control_table_value(Motor::Pitch, max_accel, DxlAddress::ProfileAccel)?;
+        delay::Ets::delay_ms(1);
         // info!("set max speed done: {:x?}", self.response_buf);
 
         Ok(())
     }
+
+    fn set_position_gains(
+        &mut self,
+        position_p_gain: u32,
+        position_i_gain: u32,
+        position_d_gain: u32,
+    ) -> Result<()> {
+        // Yaw settings
+        self.set_control_table_value(Motor::Yaw, position_p_gain, DxlAddress::PositionPGain)?;
+        delay::Ets::delay_ms(1);
+        self.set_control_table_value(Motor::Yaw, position_i_gain, DxlAddress::PositionIGain)?;
+        delay::Ets::delay_ms(1);
+        self.set_control_table_value(Motor::Yaw, position_d_gain, DxlAddress::PositionDGain)?;
+        delay::Ets::delay_ms(1);
+
+        // Pitch settings
+        self.set_control_table_value(Motor::Pitch, position_p_gain, DxlAddress::PositionPGain)?;
+        delay::Ets::delay_ms(1);
+        self.set_control_table_value(Motor::Pitch, position_i_gain, DxlAddress::PositionIGain)?;
+        delay::Ets::delay_ms(1);
+        self.set_control_table_value(Motor::Pitch, position_d_gain, DxlAddress::PositionDGain)?;
+        delay::Ets::delay_ms(1);
+        info!(
+            "set position gain done: P:{} I:{} D:{}",
+            self.position_p_gain, self.position_i_gain, self.position_d_gain
+        );
+
+        Ok(())
+    }
+
     // fn write_dxl_message(&mut self, msg_buf: &[u8], response_buf: &mut [u8; 8]) -> Result<()> {
     //     // Write message
     //     let mut res_buf: [u8; 14] = [0u8; 14];
@@ -566,6 +638,17 @@ where
                         self.max_accel = u16::from_be_bytes([frame[1], frame[2]]);
 
                         Msg::MaxAccelSet
+                    } else {
+                        Msg::None
+                    }
+                }
+                Some(Msg::PositionGainSet) => {
+                    if frame.len() == 7 {
+                        self.position_p_gain = u16::from_be_bytes([frame[1], frame[2]]);
+                        self.position_i_gain = u16::from_be_bytes([frame[3], frame[4]]);
+                        self.position_d_gain = u16::from_be_bytes([frame[5], frame[6]]);
+
+                        Msg::PositionGainSet
                     } else {
                         Msg::None
                     }

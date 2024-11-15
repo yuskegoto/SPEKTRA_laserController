@@ -1,11 +1,11 @@
 use anyhow::*;
-use esp_idf_hal::ledc::SpeedMode;
+// use esp_idf_hal::ledc::SpeedMode;
 use log::*;
 use std::result::Result::Ok;
-use std::sync::mpsc::channel;
+// use std::sync::mpsc::channel;
 // use std::sync::Arc;
 
-use esp_idf_sys::{self as _, MALLOC_CAP_8BIT};
+use esp_idf_sys::{self as _};
 use std::time::Duration; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
 
 use embedded_svc::ipv4::{self, IpInfo};
@@ -14,16 +14,21 @@ use esp_idf_svc::{eth::*, ping};
 use esp_idf_svc::{eventloop::EspSystemEventLoop, netif, nvs::EspDefaultNvsPartition};
 
 use esp_idf_hal::{
-    delay, gpio,
+    delay,
+    gpio,
     gpio::*,
-    i2c::*,
-    ledc::{self, config as ledc_config, LedcDriver, LedcTimerDriver},
+    // i2c::*,
+    ledc::{config as ledc_config, LedcDriver, LedcTimerDriver},
     peripherals::Peripherals,
     prelude::*,
-    task::*,
-    uart::{config as uart_config, AsyncUartDriver, UartDriver},
+    // task::*,
+    uart::{
+        config as uart_config,
+        AsyncUartDriver,
+        //  UartDriver
+    },
 };
-use esp_idf_svc::hal::prelude::*;
+// use esp_idf_svc::hal::prelude::*;
 
 use std::net::Ipv4Addr;
 use std::str::FromStr;
@@ -41,14 +46,14 @@ use device::*;
 mod dxlcomm;
 use dxlcomm::*;
 
-const SOFTWARE_VERSION: u8 = 0;
+const SOFTWARE_VERSION: u8 = 1;
 
 // OSC message queue buffer
 const MSG_BUF_DOWNSTREAM: usize = 64;
 const MSG_BUF_UPSTREAM: usize = 64;
 
 // Dynamixel message queue buffer
-const MSG_DXL_BUF_DOWNSTREAM: usize = 64;
+const MSG_DXL_BUF_DOWNSTREAM: usize = 128; //64;
 const MSG_DXL_BUF_UPSTREAM: usize = 64;
 
 const LED_BRIGHTNESS: u8 = 10;
@@ -176,11 +181,12 @@ fn main() -> Result<()> {
     let res = unsafe { esp_idf_sys::esp_base_mac_addr_get(mac_addr_ptr) };
     let dev_no = if res == esp_idf_sys::ESP_OK {
         info!("MAC: {:x?}", mac);
-        if let Ok(n) = lookup_device_no(&mac) {
-            n
-        } else {
-            0u8
-        }
+        lookup_device_no(&mac).unwrap_or_default()
+        // if let Ok(n) = lookup_device_no(&mac) {
+        //     n
+        // } else {
+        //     0u8
+        // }
     } else {
         0u8
     };
@@ -452,7 +458,7 @@ pub fn reboot_after_message(delay_ms: u32) -> Result<()> {
     unsafe {
         esp_idf_sys::esp_restart();
     }
-    Ok(())
+    // Ok(())
 }
 
 fn lookup_device_no(mac: &[u8; 6]) -> Result<u8> {

@@ -29,6 +29,7 @@ pub enum Msg {
     AngleReport = 0x02,
     MaxSpeedSet = 0x03,
     MaxAccelSet = 0x04,
+    PositionGainSet = 0x05,
 
     ColorSet = 0x10,
     MaxDutySet = 0x12,
@@ -176,6 +177,25 @@ impl OscReceiver {
                                             }
                                             self.send_dxl_downstream_buffer(
                                                 Msg::MaxAccelSet,
+                                                &commandbuf,
+                                            );
+                                        }
+                                    }
+
+                                    "/setpositiongains" => {
+                                        if msg.args.len() == 3 {
+                                            let mut commandbuf = vec![];
+                                            for arg in msg.args.iter() {
+                                                let val = arg.clone().int();
+                                                if let Some(v) = val {
+                                                    let setting = arg.clone().int().unwrap() as u16;
+                                                    commandbuf.extend_from_slice(
+                                                        &(setting.to_be_bytes()),
+                                                    );
+                                                }
+                                            }
+                                            self.send_dxl_downstream_buffer(
+                                                Msg::PositionGainSet,
                                                 &commandbuf,
                                             );
                                         }
